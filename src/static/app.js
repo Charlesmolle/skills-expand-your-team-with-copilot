@@ -339,6 +339,37 @@ document.addEventListener("DOMContentLoaded", () => {
     return details.schedule;
   }
 
+  function getActivityShareUrl(activityName) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("activity", activityName);
+    return url.toString();
+  }
+
+  function getShareContent(activityName, details, formattedSchedule) {
+    return {
+      title: `${activityName} at Mergington High School`,
+      text: `Check out ${activityName}! ${details.description} Schedule: ${formattedSchedule}`,
+      url: getActivityShareUrl(activityName),
+    };
+  }
+
+  async function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textArea);
+  }
+
   // Function to determine activity type (this would ideally come from backend)
   function getActivityType(activityName, description) {
     const name = activityName.toLowerCase();
@@ -533,6 +564,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Format the schedule using the new helper function
     const formattedSchedule = formatSchedule(details);
+    const shareContent = getShareContent(name, details, formattedSchedule);
 
     // Create activity tag
     const tagHtml = `
@@ -587,6 +619,18 @@ document.addEventListener("DOMContentLoaded", () => {
             .join("")}
         </ul>
       </div>
+      <div class="share-actions">
+        <span class="share-label">Share:</span>
+        <button class="share-button" data-action="native" data-activity="${name}" aria-label="Share ${name}">
+          Share
+        </button>
+        <button class="share-button" data-action="email" data-activity="${name}" aria-label="Share ${name} by email">
+          Email
+        </button>
+        <button class="share-button" data-action="copy" data-activity="${name}" aria-label="Copy link for ${name}">
+          Copy Link
+        </button>
+      </div>
       <div class="activity-card-actions">
         ${
           currentUser
@@ -622,7 +666,49 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    const shareButtons = activityCard.querySelectorAll(".share-button");
+    shareButtons.forEach((button) => {
+      button.addEventListener("click", () => handleShareAction(button, shareContent));
+    });
+
     activitiesList.appendChild(activityCard);
+  }
+
+  async function handleShareAction(button, shareContent) {
+    const action = button.dataset.action;
+
+    try {
+      if (action === "native") {
+        if (navigator.share) {
+          await navigator.share({
+            title: shareContent.title,
+            text: shareContent.text,
+            url: shareContent.url,
+          });
+          return;
+        }
+
+        await copyToClipboard(shareContent.url);
+        showMessage("Share link copied to clipboard.", "success");
+        return;
+      }
+
+      if (action === "email") {
+        const emailUrl = `mailto:?subject=${encodeURIComponent(
+          shareContent.title
+        )}&body=${encodeURIComponent(`${shareContent.text}\n\n${shareContent.url}`)}`;
+        window.location.href = emailUrl;
+        return;
+      }
+
+      if (action === "copy") {
+        await copyToClipboard(shareContent.url);
+        showMessage("Share link copied to clipboard.", "success");
+      }
+    } catch (error) {
+      console.error("Error sharing activity:", error);
+      showMessage("Could not share this activity. Please try again.", "error");
+    }
   }
 
   // Event listeners for search and filter
@@ -900,5 +986,14 @@ document.addEventListener("DOMContentLoaded", () => {
   initializeTheme();
   checkAuthentication();
   initializeFilters();
+
+  const requestedActivity = new URLSearchParams(window.location.search).get(
+    "activity"
+  );
+  if (requestedActivity) {
+    searchQuery = requestedActivity;
+    searchInput.value = requestedActivity;
+  }
+
   fetchActivities();
 });
